@@ -1,0 +1,130 @@
+#include <ESP8266WiFi.h>
+#include "ThingSpeak.h"
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <DHT11.h>
+#define SCREEN_WIDTH 128  // OLED display width, in pixels
+#define SCREEN_HEIGHT 64  // OLED display height, in pixels
+
+// Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+const int flexPin = A0;
+const int flex = 14;
+#define Buz 15
+#define led 12
+DHT11 dht11(2);
+const float VCC = 5;                    // voltage at Ardunio 5V line
+const float R_DIV = 47000.0;            // resistor used to create a voltage divider
+const float flatResistance = 25000.0;   // resistance at 90 deg
+const float bendResistance = 100000.0;  // resistance #include <Wire.h>
+const char* ssid = "CVR";          // your network SSID (name)
+const char* password = "XzT#QD3pT";  // your network password
+
+WiFiClient client;
+
+unsigned long myChannelNumber = 2220665;
+const char* myWriteAPIKey = "JVGUL67IG31LEBPC";
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(Buz, OUTPUT);
+  pinMode(led, OUTPUT);
+  pinMode(flex, INPUT);
+  delay(200);
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {  // Address 0x3D for 128x64
+    Serial.println(F("SSD1306 allocation failed"));
+    for (;;)
+      ;
+  }
+  delay(1000);
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+  display.setCursor(0, 0);
+  display.println("Prior Detection of structural irregularities using IoT");
+  display.display();
+
+  WiFi.mode(WIFI_STA);
+  ThingSpeak.begin(client);
+  // Connect or reconnect to WiFi
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.print("Attempting to connect");
+    while (WiFi.status() != WL_CONNECTED) {
+      WiFi.begin(ssid, password);
+      delay(5000);
+    }
+  }
+  digitalWrite(Buz, LOW);
+}
+void loop() {
+  //  int reading = analogRead(temp);     //Analog pin reading output voltage by Lm35
+  int sensor = digitalRead(flex);
+  int humidity = dht11.readHumidity();
+  int ADCflex = analogRead(flexPin);
+  float Vflex = ADCflex * VCC / 1023.0;
+  float Rflex = R_DIV * (VCC / Vflex - 1.0);
+  Serial.println("Resistance: " + String(Rflex) + " ohms");
+
+  // Use the calculated resistance to estimate the sensor's bend angle:
+  float angle = map(Rflex, flatResistance, bendResistance, 0, 90.0);
+  Serial.println("Bend: " + String(angle) + " degrees");
+  Serial.println();
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+  display.setCursor(0, 0);
+  display.print("Flex1 Sensor :");
+  display.print(ADCflex);
+  display.display();
+  ThingSpeak.setField(1, ADCflex);
+  ThingSpeak.writeFields(myChannelNumber, myWriteAPIKey);
+
+  if (ADCflex < 650) {
+    digitalWrite(led, HIGH);
+    display.setTextSize(1);
+    display.setTextColor(WHITE);
+    display.setCursor(0, 40);
+    display.println("Flex1 is ABNORMAL");
+    display.display();
+    digitalWrite(Buz, HIGH);
+    delay(500);
+    digitalWrite(Buz, LOW);
+  }
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+  display.setCursor(0, 10);
+  display.print("Flex2 Sensor :");
+  display.print(sensor);
+  display.display();
+  ThingSpeak.setField(2, sensor);
+  ThingSpeak.writeFields(myChannelNumber, myWriteAPIKey);
+
+  if (sensor == LOW) {
+    digitalWrite(led, HIGH);
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(WHITE);
+    display.setCursor(0, 50);
+    display.println("flex2 is Abnormal");
+    display.display();
+    digitalWrite(Buz, HIGH);
+    delay(500);
+    digitalWrite(Buz, LOW);
+  }
+  if (humidity != DHT11::ERROR_CHECKSUM && humidity != DHT11::ERROR_TIMEOUT) {
+    Serial.print("Humidity: ");
+    Serial.print(humidity);
+    Serial.println(" %");
+    display.setTextSize(1);
+    display.setTextColor(WHITE);
+    display.setCursor(0, 20);
+    display.print("Humidity : ");
+    display.print(humidity);
+    display.display();
+     ThingSpeak.setField(3, humidity);
+  ThingSpeak.writeFields(myChannelNumber, myWriteAPIKey);
+  } else {
+    Serial.println(DHT11::getErrorString(humidity));
+  }
+}
